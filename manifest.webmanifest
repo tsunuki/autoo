@@ -1,0 +1,20 @@
+{
+  "name": "ITパスポート 暗記アプリ",
+  "short_name": "ITパス暗記",
+  "description": "ITパスポート頻出問題の暗記・クイズ学習アプリ",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6fb",
+  "theme_color": "#2563eb",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
