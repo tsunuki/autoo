@@ -51,6 +51,22 @@ GitHub Pages にそのまま公開しても動きます。
 > 公開プロキシは混雑や停止で不安定なことがあります。安定運用したい場合は、
 > 自分用の CORS プロキシ（Cloudflare Workers など）を立てて設定するのがおすすめです。
 
+### 自分専用プロキシ（Cloudflare Worker）の作り方【推奨】
+
+YouTube は無料の共有プロキシのIPをボット扱いして弾くことがあります。
+自分専用の Worker を使うと弾かれにくくなります。無料・10分ほどでできます。
+
+1. [Cloudflare](https://dash.cloudflare.com/sign-up) に無料登録してログイン
+2. 左メニュー **「Workers & Pages」→「Create application」→「Create Worker」**
+3. 適当な名前をつけて **Deploy** → **「Edit code」** を開く
+4. エディタの中身を全部消し、`worker/youtube-proxy.js` の内容を貼り付けて **Deploy**
+5. 払い出された URL（例 `https://my-proxy.あなた.workers.dev`）をコピー
+6. アプリの **「⚙ 詳細設定」** に次の形で入力して保存:
+   ```
+   https://my-proxy.あなた.workers.dev/?url=
+   ```
+7. もう一度 URL を入れて文字起こし 🎉
+
 ## 📁 構成
 
 ```
@@ -60,6 +76,7 @@ src/app.js             アプリ本体（URL解析・字幕取得・表示・履
 manifest.webmanifest   PWA 設定
 sw.js                  オフライン用 Service Worker
 icon.svg               アイコン
+worker/youtube-proxy.js  自分専用 CORS プロキシ（Cloudflare Worker 用）
 ```
 
 ## 🔒 プライバシー
