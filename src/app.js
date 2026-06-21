@@ -10,7 +10,7 @@
 
   // ---- 設定 ----------------------------------------------------------------
   // 更新したらここを上げる（フッターに表示されます）。
-  const APP_VERSION = "1.2.0";
+  const APP_VERSION = "1.2.1";
   const BUILD_DATE = "2026-06-21";
 
   const LS_HISTORY = "yt_transcript_history_v1";
@@ -19,8 +19,8 @@
 
   // CORS プロキシ候補（上から順に試す）。post: POST 中継に対応しているか。
   const BUILTIN_PROXIES = [
-    { build: (u) => "https://corsproxy.io/?url=" + encodeURIComponent(u), post: true },
     { build: (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u), post: false },
+    { build: (u) => "https://corsproxy.io/?url=" + encodeURIComponent(u), post: true },
     { build: (u) => "https://thingproxy.freeboard.io/fetch/" + u, post: true },
   ];
 
@@ -141,6 +141,10 @@
         if (!res.ok) throw new Error("HTTP " + res.status);
         const text = await res.text();
         if (!text || text.length < 20) throw new Error("空のレスポンス");
+        // 応答が想定どおり（YouTube本体の中身）か検証。違えば次のプロキシへ。
+        if (opts.validate && !opts.validate(text)) {
+          throw new Error("想定外のレスポンス（プロキシのエラーページの可能性）");
+        }
         return text;
       } catch (e) {
         lastErr = e;
@@ -156,6 +160,7 @@
         method: "POST",
         body: innertubeBody(videoId),
         headers: { "Content-Type": "application/json" },
+        validate: (t) => t.indexOf("playabilityStatus") !== -1,
       });
       const pr = JSON.parse(raw);
       const ok = pr && pr.playabilityStatus && pr.playabilityStatus.status === "OK";
@@ -163,7 +168,10 @@
     } catch (e) {
       /* watch ページへフォールバック */
     }
-    const html = await proxyFetch(`https://www.youtube.com/watch?v=${videoId}&hl=ja`);
+    const html = await proxyFetch(
+      `https://www.youtube.com/watch?v=${videoId}&hl=ja`,
+      { validate: (t) => t.indexOf("ytInitialPlayerResponse") !== -1 }
+    );
     const pr = getPlayerResponse(html);
     if (!pr) {
       throw new Error("動画情報を解析できませんでした（プロキシ設定を確認してください）。");

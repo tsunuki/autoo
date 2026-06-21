@@ -1,5 +1,5 @@
 // シンプルなオフラインキャッシュ用 Service Worker
-const CACHE = "yt-transcript-v4";
+const CACHE = "yt-transcript-v5";
 const ASSETS = [
   "./",
   "./index.html",
