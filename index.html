@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ITパスポート 暗記アプリ</title>
+  <link rel="stylesheet" href="src/style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>📘 ITパスポート 暗記アプリ</h1>
+    <p class="subtitle">頻出問題で暗記＆演習 — 自分の問題も追加できます</p>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="study">📖 学習</button>
+    <button class="tab" data-tab="quiz">📝 クイズ</button>
+    <button class="tab" data-tab="manage">🗂 問題管理</button>
+    <button class="tab" data-tab="stats">📊 成績</button>
+  </nav>
+
+  <!-- 絞り込みバー -->
+  <div class="filter-bar">
+    <input type="search" id="searchInput" placeholder="🔍 問題・解説を検索..." />
+    <select id="categoryFilter">
+      <option value="">すべてのカテゴリ</option>
+      <option value="ストラテジ系">ストラテジ系</option>
+      <option value="マネジメント系">マネジメント系</option>
+      <option value="テクノロジ系">テクノロジ系</option>
+    </select>
+    <label class="bookmark-toggle">
+      <input type="checkbox" id="bookmarkOnly" /> ⭐ お気に入りのみ
+    </label>
+  </div>
+
+  <main>
+    <!-- 学習モード -->
+    <section id="study" class="tab-panel active">
+      <div id="studyCard" class="card flashcard">
+        <div class="card-meta">
+          <span class="badge" id="studyCategory"></span>
+          <span class="counter" id="studyCounter"></span>
+        </div>
+        <div class="card-question" id="studyQuestion"></div>
+        <div class="card-answer hidden" id="studyAnswer"></div>
+        <div class="card-actions">
+          <button id="studyReveal" class="btn primary">答えを見る</button>
+          <button id="studyBookmark" class="btn ghost">⭐ お気に入り</button>
+        </div>
+      </div>
+      <div class="nav-buttons">
+        <button id="studyPrev" class="btn">← 前へ</button>
+        <button id="studyShuffle" class="btn">🔀 シャッフル</button>
+        <button id="studyNext" class="btn">次へ →</button>
+      </div>
+      <p id="studyEmpty" class="empty hidden">該当する問題がありません。</p>
+    </section>
+
+    <!-- クイズモード -->
+    <section id="quiz" class="tab-panel">
+      <div id="quizCard" class="card">
+        <div class="card-meta">
+          <span class="badge" id="quizCategory"></span>
+          <span class="counter" id="quizCounter"></span>
+        </div>
+        <div class="card-question" id="quizQuestion"></div>
+        <div class="choices" id="quizChoices"></div>
+        <div class="card-answer hidden" id="quizExplanation"></div>
+        <div class="card-actions">
+          <button id="quizNext" class="btn primary hidden">次の問題 →</button>
+        </div>
+      </div>
+      <p id="quizEmpty" class="empty hidden">該当する問題がありません。</p>
+    </section>
+
+    <!-- 問題管理（自作問題の追加・編集・削除） -->
+    <section id="manage" class="tab-panel">
+      <div class="card">
+        <h2 id="formTitle">問題を追加</h2>
+        <form id="questionForm">
+          <input type="hidden" id="editId" />
+          <label>カテゴリ
+            <select id="fCategory" required>
+              <option value="ストラテジ系">ストラテジ系</option>
+              <option value="マネジメント系">マネジメント系</option>
+              <option value="テクノロジ系">テクノロジ系</option>
+            </select>
+          </label>
+          <label>問題文
+            <textarea id="fQuestion" rows="2" required placeholder="問題を入力"></textarea>
+          </label>
+          <div class="choice-inputs">
+            <label>選択肢1 <input type="text" id="fChoice0" required /></label>
+            <label>選択肢2 <input type="text" id="fChoice1" required /></label>
+            <label>選択肢3 <input type="text" id="fChoice2" /></label>
+            <label>選択肢4 <input type="text" id="fChoice3" /></label>
+          </div>
+          <label>正解の選択肢
+            <select id="fAnswer" required>
+              <option value="0">選択肢1</option>
+              <option value="1">選択肢2</option>
+              <option value="2">選択肢3</option>
+              <option value="3">選択肢4</option>
+            </select>
+          </label>
+          <label>解説（Markdown対応：**太字**, # 見出し, - リスト）
+            <textarea id="fExplanation" rows="3" placeholder="解説を入力（任意）"></textarea>
+          </label>
+          <div class="card-actions">
+            <button type="submit" class="btn primary">保存</button>
+            <button type="button" id="formReset" class="btn ghost">クリア</button>
+          </div>
+        </form>
+      </div>
+      <h2 class="list-title">自作問題一覧 <span id="customCount" class="muted"></span></h2>
+      <div id="customList" class="custom-list"></div>
+    </section>
+
+    <!-- 成績 -->
+    <section id="stats" class="tab-panel">
+      <div class="card">
+        <h2>クイズ成績</h2>
+        <div class="stat-grid">
+          <div class="stat"><span class="stat-num" id="statTotal">0</span><span>挑戦数</span></div>
+          <div class="stat"><span class="stat-num" id="statCorrect">0</span><span>正解数</span></div>
+          <div class="stat"><span class="stat-num" id="statRate">0%</span><span>正答率</span></div>
+        </div>
+        <div class="card-actions">
+          <button id="resetStats" class="btn ghost">成績をリセット</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>苦手な問題（間違えた回数順）</h2>
+        <div id="weakList" class="weak-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span id="footerInfo"></span>
+  </footer>
+
+  <script src="src/questions.js"></script>
+  <script src="src/markdown.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>
