@@ -9,6 +9,10 @@
   "use strict";
 
   // ---- 設定 ----------------------------------------------------------------
+  // 更新したらここを上げる（フッターに表示されます）。
+  const APP_VERSION = "1.1.0";
+  const BUILD_DATE = "2026-06-21";
+
   const LS_HISTORY = "yt_transcript_history_v1";
   const LS_PROXY = "yt_transcript_proxy_v1";
   const MAX_HISTORY = 30;
@@ -496,6 +500,8 @@
     });
     initProxyUI();
     renderHistory();
+    const ver = document.getElementById("appVersion");
+    if (ver) ver.textContent = `v${APP_VERSION}（${BUILD_DATE} 更新）`;
   }
 
   document.addEventListener("DOMContentLoaded", init);
