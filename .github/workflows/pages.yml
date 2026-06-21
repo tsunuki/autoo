@@ -1,5 +1,12 @@
 name: Deploy to GitHub Pages
 
+# 2つのアプリを1つの GitHub Pages サイトにまとめて公開します。
+#   /          … カスタムメモ帳アプリ（このブランチ: claude/custom-notepad-app-1zmccx）
+#   /youtube/  … YouTube 文字起こしアプリ（claude/youtube-transcription-app-fk8k8c ブランチ）
+#
+# デプロイは github-pages 環境の制約上デフォルトブランチから実行します。
+# YouTube アプリ側を更新したら、このワークフローを「Run workflow」で
+# 再実行（または本ブランチへ push）すると最新版が反映されます。
 on:
   push:
     branches:
@@ -22,12 +29,29 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout notepad app (site root)
+        uses: actions/checkout@v4
+        with:
+          ref: claude/custom-notepad-app-1zmccx
+          path: site
+
+      - name: Checkout YouTube app (/youtube)
+        uses: actions/checkout@v4
+        with:
+          ref: claude/youtube-transcription-app-fk8k8c
+          path: site/youtube
+
+      - name: Strip git/CI metadata from artifact
+        run: |
+          rm -rf site/.git site/.github site/youtube/.git site/youtube/.github
+
       - uses: actions/configure-pages@v5
         with:
           enablement: true
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: site
+
       - id: deployment
         uses: actions/deploy-pages@v4
