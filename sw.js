@@ -1,5 +1,5 @@
 // シンプルなオフラインキャッシュ用 Service Worker
-const CACHE = "yt-transcript-v1";
+const CACHE = "yt-transcript-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -24,19 +24,22 @@ self.addEventListener("activate", (e) => {
 });
 
 self.addEventListener("fetch", (e) => {
-  if (e.request.method !== "GET") return;
+  const url = new URL(e.request.url);
+  // 同一オリジンの GET（アプリ本体）だけをキャッシュ対象にする。
+  // YouTube や CORS プロキシへの外部通信には一切介入せず、ブラウザに任せる。
+  if (e.request.method !== "GET" || url.origin !== self.location.origin) {
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then((cached) => {
-      return (
-        cached ||
-        fetch(e.request)
-          .then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(e.request, copy));
-            return res;
-          })
-          .catch(() => cached)
-      );
+      if (cached) return cached;
+      return fetch(e.request)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy));
+          return res;
+        })
+        .catch(() => cached || Response.error());
     })
   );
 });
