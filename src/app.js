@@ -10,19 +10,40 @@
 
   // ---- 設定 ----------------------------------------------------------------
   // 更新したらここを上げる（フッターに表示されます）。
-  const APP_VERSION = "1.1.0";
+  const APP_VERSION = "1.2.0";
   const BUILD_DATE = "2026-06-21";
 
   const LS_HISTORY = "yt_transcript_history_v1";
   const LS_PROXY = "yt_transcript_proxy_v1";
   const MAX_HISTORY = 30;
 
-  // CORS プロキシ候補（上から順に試す）。対象URLを末尾に付与する。
+  // CORS プロキシ候補（上から順に試す）。post: POST 中継に対応しているか。
   const BUILTIN_PROXIES = [
-    (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
-    (u) => "https://corsproxy.io/?url=" + encodeURIComponent(u),
-    (u) => "https://thingproxy.freeboard.io/fetch/" + u,
+    { build: (u) => "https://corsproxy.io/?url=" + encodeURIComponent(u), post: true },
+    { build: (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u), post: false },
+    { build: (u) => "https://thingproxy.freeboard.io/fetch/" + u, post: true },
   ];
+
+  // YouTube 内部API（InnerTube）。ANDROID クライアントはボット判定を受けにくい。
+  const INNERTUBE_URL =
+    "https://www.youtube.com/youtubei/v1/player?key=AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w";
+  const innertubeBody = (videoId) =>
+    JSON.stringify({
+      context: {
+        client: {
+          clientName: "ANDROID",
+          clientVersion: "19.35.36",
+          androidSdkVersion: 34,
+          hl: "ja",
+          gl: "JP",
+          userAgent:
+            "com.google.android.youtube/19.35.36 (Linux; U; Android 14) gzip",
+        },
+      },
+      videoId,
+      contentCheckOk: true,
+      racyCheckOk: true,
+    });
 
   // ---- DOM ----------------------------------------------------------------
   const $ = (id) => document.getElementById(id);
@@ -92,20 +113,31 @@
     const custom = localStorage.getItem(LS_PROXY);
     const list = [];
     if (custom) {
-      list.push((u) =>
-        custom.includes("{url}")
-          ? custom.replace("{url}", encodeURIComponent(u))
-          : custom + encodeURIComponent(u)
-      );
+      // ユーザー指定プロキシ（自前の Worker 等）は POST 対応とみなして優先
+      list.push({
+        post: true,
+        build: (u) =>
+          custom.includes("{url}")
+            ? custom.replace("{url}", encodeURIComponent(u))
+            : custom + encodeURIComponent(u),
+      });
     }
     return list.concat(BUILTIN_PROXIES);
   }
 
-  async function proxyFetch(targetUrl) {
+  async function proxyFetch(targetUrl, opts) {
+    opts = opts || {};
+    const needPost = opts.method === "POST";
     let lastErr;
-    for (const build of getProxies()) {
+    for (const p of getProxies()) {
+      if (needPost && !p.post) continue; // POST 非対応プロキシはスキップ
       try {
-        const res = await fetch(build(targetUrl), { redirect: "follow" });
+        const res = await fetch(p.build(targetUrl), {
+          method: opts.method || "GET",
+          body: opts.body,
+          headers: opts.headers,
+          redirect: "follow",
+        });
         if (!res.ok) throw new Error("HTTP " + res.status);
         const text = await res.text();
         if (!text || text.length < 20) throw new Error("空のレスポンス");
@@ -115,6 +147,28 @@
       }
     }
     throw lastErr || new Error("すべてのプロキシで失敗しました");
+  }
+
+  // プレイヤー情報を取得：まず InnerTube(ANDROID)、ダメなら watch ページ
+  async function fetchPlayerResponse(videoId) {
+    try {
+      const raw = await proxyFetch(INNERTUBE_URL, {
+        method: "POST",
+        body: innertubeBody(videoId),
+        headers: { "Content-Type": "application/json" },
+      });
+      const pr = JSON.parse(raw);
+      const ok = pr && pr.playabilityStatus && pr.playabilityStatus.status === "OK";
+      if (pr && (pr.captions || ok)) return pr;
+    } catch (e) {
+      /* watch ページへフォールバック */
+    }
+    const html = await proxyFetch(`https://www.youtube.com/watch?v=${videoId}&hl=ja`);
+    const pr = getPlayerResponse(html);
+    if (!pr) {
+      throw new Error("動画情報を解析できませんでした（プロキシ設定を確認してください）。");
+    }
+    return pr;
   }
 
   // ---- HTML から JSON オブジェクトを抽出（波括弧マッチング） ---------------
@@ -220,20 +274,31 @@
     setStatus("動画情報を取得中… ⏳", "loading");
 
     try {
-      const html = await proxyFetch(
-        `https://www.youtube.com/watch?v=${videoId}&hl=ja`
-      );
-      const pr = getPlayerResponse(html);
-      if (!pr)
-        throw new Error(
-          "動画情報を解析できませんでした（プロキシ設定を確認してください）。"
-        );
+      const pr = await fetchPlayerResponse(videoId);
 
       const status = pr.playabilityStatus && pr.playabilityStatus.status;
-      if (status && status !== "OK") {
-        const reason =
-          (pr.playabilityStatus && pr.playabilityStatus.reason) || status;
-        throw new Error("この動画は再生できません：" + reason);
+      const reason =
+        (pr.playabilityStatus &&
+          (pr.playabilityStatus.reason ||
+            (pr.playabilityStatus.errorScreen &&
+              pr.playabilityStatus.errorScreen.playerErrorMessageRenderer &&
+              pr.playabilityStatus.errorScreen.playerErrorMessageRenderer.reason &&
+              pr.playabilityStatus.errorScreen.playerErrorMessageRenderer.reason
+                .simpleText))) ||
+        status;
+      // 字幕が取れていれば再生不可ステータスでも続行する
+      const hasCaptions =
+        pr.captions &&
+        pr.captions.playerCaptionsTracklistRenderer &&
+        pr.captions.playerCaptionsTracklistRenderer.captionTracks;
+      if (status && status !== "OK" && !hasCaptions) {
+        if (/bot|sign in|confirm|login/i.test(String(reason))) {
+          throw new Error(
+            "YouTubeのボット対策でブロックされました（共有プロキシのIPが弾かれています）。" +
+              "「⚙ 詳細設定」で別のCORSプロキシに変更するか、少し時間をおいて再試行してください。"
+          );
+        }
+        throw new Error("この動画は取得できません：" + reason);
       }
 
       const tracks =
