@@ -1,389 +1,502 @@
-// ===== ITパスポート暗記アプリ 本体 =====
+/* =========================================================================
+ * YouTube 文字起こしアプリ（ブラウザ完結 / 字幕取得方式）
+ *
+ * YouTube が持つ字幕トラック（手動字幕・自動生成字幕の両方）を
+ * CORS プロキシ経由で取得し、全文テキストとして表示・保存します。
+ * サーバー不要。データ（履歴・設定）はブラウザの localStorage に保存。
+ * ========================================================================= */
 (function () {
   "use strict";
 
-  const STORAGE = {
-    custom: "itp_custom_questions",
-    bookmarks: "itp_bookmarks",
-    stats: "itp_stats",
-    wrong: "itp_wrong_counts",
+  // ---- 設定 ----------------------------------------------------------------
+  const LS_HISTORY = "yt_transcript_history_v1";
+  const LS_PROXY = "yt_transcript_proxy_v1";
+  const MAX_HISTORY = 30;
+
+  // CORS プロキシ候補（上から順に試す）。対象URLを末尾に付与する。
+  const BUILTIN_PROXIES = [
+    (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+    (u) => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+    (u) => "https://thingproxy.freeboard.io/fetch/" + u,
+  ];
+
+  // ---- DOM ----------------------------------------------------------------
+  const $ = (id) => document.getElementById(id);
+  const els = {
+    form: $("urlForm"),
+    url: $("urlInput"),
+    go: $("goBtn"),
+    status: $("status"),
+    result: $("result"),
+    vidTitle: $("vidTitle"),
+    vidMeta: $("vidMeta"),
+    thumb: $("thumb"),
+    langSelect: $("langSelect"),
+    tsToggle: $("tsToggle"),
+    transcript: $("transcript"),
+    copyBtn: $("copyBtn"),
+    downloadBtn: $("downloadBtn"),
+    wordCount: $("wordCount"),
+    historyList: $("historyList"),
+    clearHistory: $("clearHistory"),
+    proxyInput: $("proxyInput"),
+    saveProxy: $("saveProxy"),
+    proxyHint: $("proxyHint"),
   };
 
-  // ---- 永続化ヘルパ ----
-  const load = (key, fallback) => {
-    try {
-      const v = localStorage.getItem(key);
-      return v ? JSON.parse(v) : fallback;
-    } catch (e) {
-      return fallback;
+  // ---- 状態 ----------------------------------------------------------------
+  let current = null; // { videoId, title, author, length, tracks, lang, lines }
+
+  // ---- ユーティリティ ------------------------------------------------------
+  function setStatus(msg, kind) {
+    els.status.textContent = msg || "";
+    els.status.className = "status" + (kind ? " " + kind : "");
+    els.status.classList.toggle("hidden", !msg);
+  }
+
+  function fmtTime(ms) {
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+  }
+
+  function decodeEntities(str) {
+    if (!str) return "";
+    const ta = document.createElement("textarea");
+    ta.innerHTML = str;
+    return ta.value;
+  }
+
+  // YouTube URL / ID から動画IDを取り出す
+  function extractVideoId(input) {
+    if (!input) return null;
+    const s = input.trim();
+    if (/^[\w-]{11}$/.test(s)) return s;
+    let m;
+    if ((m = s.match(/[?&]v=([\w-]{11})/))) return m[1];
+    if ((m = s.match(/youtu\.be\/([\w-]{11})/))) return m[1];
+    if ((m = s.match(/youtube\.com\/(?:embed|shorts|live|v)\/([\w-]{11})/))) return m[1];
+    if ((m = s.match(/([\w-]{11})/))) return m[1];
+    return null;
+  }
+
+  // ---- プロキシ取得 --------------------------------------------------------
+  function getProxies() {
+    const custom = localStorage.getItem(LS_PROXY);
+    const list = [];
+    if (custom) {
+      list.push((u) =>
+        custom.includes("{url}")
+          ? custom.replace("{url}", encodeURIComponent(u))
+          : custom + encodeURIComponent(u)
+      );
     }
-  };
-  const save = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+    return list.concat(BUILTIN_PROXIES);
+  }
 
-  // ---- 状態 ----
-  let customQuestions = load(STORAGE.custom, []);
-  let bookmarks = load(STORAGE.bookmarks, []); // id配列
-  let stats = load(STORAGE.stats, { total: 0, correct: 0 });
-  let wrongCounts = load(STORAGE.wrong, {}); // {id: count}
-
-  let studyList = [];
-  let studyIndex = 0;
-  let quizList = [];
-  let quizIndex = 0;
-
-  // ---- 全問題（内蔵＋自作） ----
-  const allQuestions = () => window.BUILTIN_QUESTIONS.concat(customQuestions);
-
-  // ---- フィルタ適用 ----
-  function getFiltered() {
-    const term = $("#searchInput").value.trim().toLowerCase();
-    const cat = $("#categoryFilter").value;
-    const bmOnly = $("#bookmarkOnly").checked;
-    return allQuestions().filter((q) => {
-      if (cat && q.category !== cat) return false;
-      if (bmOnly && !bookmarks.includes(q.id)) return false;
-      if (term) {
-        const hay = (q.question + " " + (q.explanation || "") + " " + q.choices.join(" ")).toLowerCase();
-        if (!hay.includes(term)) return false;
+  async function proxyFetch(targetUrl) {
+    let lastErr;
+    for (const build of getProxies()) {
+      try {
+        const res = await fetch(build(targetUrl), { redirect: "follow" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const text = await res.text();
+        if (!text || text.length < 20) throw new Error("空のレスポンス");
+        return text;
+      } catch (e) {
+        lastErr = e;
       }
-      return true;
-    });
-  }
-
-  // ---- ショートカット ----
-  function $(sel) { return document.querySelector(sel); }
-  function $all(sel) { return Array.from(document.querySelectorAll(sel)); }
-
-  // ============ タブ切替 ============
-  $all(".tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      $all(".tab").forEach((t) => t.classList.remove("active"));
-      $all(".tab-panel").forEach((p) => p.classList.remove("active"));
-      tab.classList.add("active");
-      $("#" + tab.dataset.tab).classList.add("active");
-      refreshActive();
-    });
-  });
-
-  function currentTab() {
-    const active = $(".tab.active");
-    return active ? active.dataset.tab : "study";
-  }
-
-  function refreshActive() {
-    const tab = currentTab();
-    if (tab === "study") renderStudy();
-    else if (tab === "quiz") loadQuiz();
-    else if (tab === "manage") renderCustomList();
-    else if (tab === "stats") renderStats();
-  }
-
-  // ============ 学習モード ============
-  function renderStudy() {
-    studyList = getFiltered();
-    if (studyIndex >= studyList.length) studyIndex = 0;
-    const empty = studyList.length === 0;
-    $("#studyCard").classList.toggle("hidden", empty);
-    $(".nav-buttons").classList.toggle("hidden", empty);
-    $("#studyEmpty").classList.toggle("hidden", !empty);
-    if (empty) return;
-
-    const q = studyList[studyIndex];
-    $("#studyCategory").textContent = q.category;
-    $("#studyCounter").textContent = `${studyIndex + 1} / ${studyList.length}`;
-    $("#studyQuestion").textContent = q.question;
-    const ansHtml =
-      `<strong>正解：</strong>${escapeHtml(q.choices[q.answer])}` +
-      (q.explanation ? "<hr style='border:none;border-top:1px solid #e5e7eb;margin:10px 0'>" + window.renderMarkdown(q.explanation) : "");
-    $("#studyAnswer").innerHTML = ansHtml;
-    $("#studyAnswer").classList.add("hidden");
-    $("#studyReveal").textContent = "答えを見る";
-    updateBookmarkBtn(q.id);
-  }
-
-  function updateBookmarkBtn(id) {
-    const on = bookmarks.includes(id);
-    $("#studyBookmark").textContent = on ? "⭐ 解除" : "⭐ お気に入り";
-    $("#studyBookmark").classList.toggle("primary", on);
-  }
-
-  $("#studyReveal").addEventListener("click", () => {
-    const a = $("#studyAnswer");
-    a.classList.toggle("hidden");
-    $("#studyReveal").textContent = a.classList.contains("hidden") ? "答えを見る" : "答えを隠す";
-  });
-  $("#studyNext").addEventListener("click", () => {
-    if (!studyList.length) return;
-    studyIndex = (studyIndex + 1) % studyList.length;
-    renderStudy();
-  });
-  $("#studyPrev").addEventListener("click", () => {
-    if (!studyList.length) return;
-    studyIndex = (studyIndex - 1 + studyList.length) % studyList.length;
-    renderStudy();
-  });
-  $("#studyShuffle").addEventListener("click", () => {
-    studyList = shuffle(getFiltered());
-    studyIndex = 0;
-    // シャッフル結果を維持するため一時表示
-    const empty = studyList.length === 0;
-    if (!empty) {
-      const q = studyList[0];
-      $("#studyCategory").textContent = q.category;
-      $("#studyCounter").textContent = `1 / ${studyList.length}`;
-      $("#studyQuestion").textContent = q.question;
-      $("#studyAnswer").innerHTML =
-        `<strong>正解：</strong>${escapeHtml(q.choices[q.answer])}` +
-        (q.explanation ? "<hr style='border:none;border-top:1px solid #e5e7eb;margin:10px 0'>" + window.renderMarkdown(q.explanation) : "");
-      $("#studyAnswer").classList.add("hidden");
-      $("#studyReveal").textContent = "答えを見る";
-      updateBookmarkBtn(q.id);
     }
-  });
-  $("#studyBookmark").addEventListener("click", () => {
-    if (!studyList.length) return;
-    const id = studyList[studyIndex].id;
-    toggleBookmark(id);
-    updateBookmarkBtn(id);
-  });
-
-  function toggleBookmark(id) {
-    const i = bookmarks.indexOf(id);
-    if (i === -1) bookmarks.push(id);
-    else bookmarks.splice(i, 1);
-    save(STORAGE.bookmarks, bookmarks);
+    throw lastErr || new Error("すべてのプロキシで失敗しました");
   }
 
-  // ============ クイズモード ============
-  function loadQuiz() {
-    quizList = shuffle(getFiltered());
-    quizIndex = 0;
-    renderQuiz();
-  }
-
-  function renderQuiz() {
-    const empty = quizList.length === 0;
-    $("#quizCard").classList.toggle("hidden", empty);
-    $("#quizEmpty").classList.toggle("hidden", !empty);
-    if (empty) return;
-
-    const q = quizList[quizIndex];
-    $("#quizCategory").textContent = q.category;
-    $("#quizCounter").textContent = `${quizIndex + 1} / ${quizList.length}`;
-    $("#quizQuestion").textContent = q.question;
-    $("#quizExplanation").classList.add("hidden");
-    $("#quizNext").classList.add("hidden");
-
-    const box = $("#quizChoices");
-    box.innerHTML = "";
-    q.choices.forEach((choice, i) => {
-      if (choice == null || choice === "") return;
-      const btn = document.createElement("button");
-      btn.className = "choice";
-      btn.textContent = choice;
-      btn.addEventListener("click", () => answerQuiz(q, i, btn));
-      box.appendChild(btn);
-    });
-  }
-
-  function answerQuiz(q, picked, btn) {
-    const buttons = $all("#quizChoices .choice");
-    buttons.forEach((b, i) => {
-      b.disabled = true;
-      if (i === q.answer) b.classList.add("correct");
-    });
-    const correct = picked === q.answer;
-    if (!correct) {
-      btn.classList.add("wrong");
-      wrongCounts[q.id] = (wrongCounts[q.id] || 0) + 1;
-      save(STORAGE.wrong, wrongCounts);
+  // ---- HTML から JSON オブジェクトを抽出（波括弧マッチング） ---------------
+  function extractJsonAfter(text, marker) {
+    const idx = text.indexOf(marker);
+    if (idx === -1) return null;
+    const start = text.indexOf("{", idx);
+    if (start === -1) return null;
+    let depth = 0,
+      inStr = false,
+      esc = false;
+    for (let j = start; j < text.length; j++) {
+      const c = text[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === "\\") esc = true;
+        else if (c === '"') inStr = false;
+      } else if (c === '"') inStr = true;
+      else if (c === "{") depth++;
+      else if (c === "}") {
+        depth--;
+        if (depth === 0) {
+          try {
+            return JSON.parse(text.slice(start, j + 1));
+          } catch (e) {
+            return null;
+          }
+        }
+      }
     }
-    stats.total += 1;
-    if (correct) stats.correct += 1;
-    save(STORAGE.stats, stats);
-
-    const exp = $("#quizExplanation");
-    exp.innerHTML =
-      (correct ? "<strong style='color:#16a34a'>正解！</strong>" : "<strong style='color:#dc2626'>不正解</strong>") +
-      (q.explanation ? "<hr style='border:none;border-top:1px solid #e5e7eb;margin:10px 0'>" + window.renderMarkdown(q.explanation) : "");
-    exp.classList.remove("hidden");
-    $("#quizNext").classList.remove("hidden");
+    return null;
   }
 
-  $("#quizNext").addEventListener("click", () => {
-    quizIndex += 1;
-    if (quizIndex >= quizList.length) {
-      // 一周したら再シャッフル
-      quizList = shuffle(getFiltered());
-      quizIndex = 0;
-    }
-    renderQuiz();
-  });
+  function getPlayerResponse(html) {
+    return (
+      extractJsonAfter(html, "ytInitialPlayerResponse") ||
+      extractJsonAfter(html, '"playerResponse":')
+    );
+  }
 
-  // ============ 問題管理 ============
-  const form = $("#questionForm");
-  form.addEventListener("submit", (e) => {
+  function trackLabel(t) {
+    const name =
+      (t.name &&
+        (t.name.simpleText ||
+          (t.name.runs && t.name.runs[0] && t.name.runs[0].text))) ||
+      t.languageCode ||
+      "字幕";
+    const auto = t.kind === "asr" ? "（自動生成）" : "";
+    return name + auto;
+  }
+
+  // ---- 字幕本文の取得 ------------------------------------------------------
+  async function fetchTranscriptLines(baseUrl) {
+    const url = baseUrl + (baseUrl.includes("?") ? "&" : "?") + "fmt=json3";
+    const raw = await proxyFetch(url);
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      // json3 が取れない場合は XML フォールバック
+      return parseXmlTranscript(await proxyFetch(baseUrl));
+    }
+    const lines = [];
+    for (const ev of data.events || []) {
+      if (!ev.segs) continue;
+      const text = ev.segs
+        .map((s) => s.utf8 || "")
+        .join("")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (text) lines.push({ start: ev.tStartMs || 0, text });
+    }
+    return lines;
+  }
+
+  function parseXmlTranscript(xml) {
+    const doc = new DOMParser().parseFromString(xml, "text/xml");
+    const lines = [];
+    doc.querySelectorAll("text").forEach((node) => {
+      const text = decodeEntities(node.textContent || "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (text)
+        lines.push({
+          start: Math.round(parseFloat(node.getAttribute("start") || "0") * 1000),
+          text,
+        });
+    });
+    return lines;
+  }
+
+  // ---- メイン処理 ----------------------------------------------------------
+  async function handleSubmit(e) {
     e.preventDefault();
-    const editId = $("#editId").value;
-    const choices = [0, 1, 2, 3].map((i) => $("#fChoice" + i).value.trim());
-    const data = {
-      id: editId || "c" + Date.now(),
-      category: $("#fCategory").value,
-      question: $("#fQuestion").value.trim(),
-      choices: choices,
-      answer: parseInt($("#fAnswer").value, 10),
-      explanation: $("#fExplanation").value.trim(),
-    };
-    // 空欄の選択肢は除外（最低2つ必要）
-    data.choices = data.choices.filter((c, i) => c !== "" || i < 2);
-    if (data.choices.filter((c) => c !== "").length < 2) {
-      alert("選択肢は最低2つ入力してください。");
-      return;
-    }
-    if (data.answer >= data.choices.length || data.choices[data.answer] === "") {
-      alert("正解に指定した選択肢が空です。正しい選択肢を選んでください。");
+    const videoId = extractVideoId(els.url.value);
+    if (!videoId) {
+      setStatus("YouTube の URL または動画IDを正しく入力してください。", "error");
       return;
     }
 
-    if (editId) {
-      const idx = customQuestions.findIndex((q) => q.id === editId);
-      if (idx !== -1) customQuestions[idx] = data;
-    } else {
-      customQuestions.push(data);
+    els.go.disabled = true;
+    els.result.classList.add("hidden");
+    setStatus("動画情報を取得中… ⏳", "loading");
+
+    try {
+      const html = await proxyFetch(
+        `https://www.youtube.com/watch?v=${videoId}&hl=ja`
+      );
+      const pr = getPlayerResponse(html);
+      if (!pr)
+        throw new Error(
+          "動画情報を解析できませんでした（プロキシ設定を確認してください）。"
+        );
+
+      const status = pr.playabilityStatus && pr.playabilityStatus.status;
+      if (status && status !== "OK") {
+        const reason =
+          (pr.playabilityStatus && pr.playabilityStatus.reason) || status;
+        throw new Error("この動画は再生できません：" + reason);
+      }
+
+      const tracks =
+        (pr.captions &&
+          pr.captions.playerCaptionsTracklistRenderer &&
+          pr.captions.playerCaptionsTracklistRenderer.captionTracks) ||
+        [];
+      if (!tracks.length) {
+        throw new Error(
+          "この動画には字幕がありません。字幕取得方式では文字起こしできません（自動生成字幕も無い動画です）。"
+        );
+      }
+
+      const details = pr.videoDetails || {};
+      current = {
+        videoId,
+        title: decodeEntities(details.title || "(タイトル不明)"),
+        author: decodeEntities(details.author || ""),
+        length: parseInt(details.lengthSeconds || "0", 10),
+        tracks,
+        lang: null,
+        lines: [],
+      };
+
+      // 言語セレクトを構築（日本語→英語→先頭の優先順で初期選択）
+      populateLangSelect(tracks);
+      const initial = pickPreferredIndex(tracks);
+      els.langSelect.value = String(initial);
+
+      await loadTrack(initial);
+    } catch (err) {
+      console.error(err);
+      setStatus("⚠ " + (err.message || "取得に失敗しました。"), "error");
+    } finally {
+      els.go.disabled = false;
     }
-    save(STORAGE.custom, customQuestions);
-    resetForm();
-    renderCustomList();
-    updateFooter();
-  });
-
-  $("#formReset").addEventListener("click", resetForm);
-
-  function resetForm() {
-    form.reset();
-    $("#editId").value = "";
-    $("#formTitle").textContent = "問題を追加";
   }
 
-  function renderCustomList() {
-    $("#customCount").textContent = `（${customQuestions.length}件）`;
-    const list = $("#customList");
-    list.innerHTML = "";
-    if (customQuestions.length === 0) {
-      list.innerHTML = '<p class="empty">まだ自作問題はありません。上のフォームから追加できます。</p>';
-      return;
+  function populateLangSelect(tracks) {
+    els.langSelect.innerHTML = "";
+    tracks.forEach((t, i) => {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = trackLabel(t);
+      els.langSelect.appendChild(opt);
+    });
+  }
+
+  function pickPreferredIndex(tracks) {
+    const byLang = (code) =>
+      tracks.findIndex((t) => (t.languageCode || "").startsWith(code));
+    let i = tracks.findIndex(
+      (t) => (t.languageCode || "").startsWith("ja") && t.kind !== "asr"
+    );
+    if (i === -1) i = byLang("ja");
+    if (i === -1)
+      i = tracks.findIndex(
+        (t) => (t.languageCode || "").startsWith("en") && t.kind !== "asr"
+      );
+    if (i === -1) i = byLang("en");
+    return i === -1 ? 0 : i;
+  }
+
+  async function loadTrack(index) {
+    if (!current) return;
+    const track = current.tracks[index];
+    if (!track) return;
+    setStatus("字幕を取得中… ⏳", "loading");
+    try {
+      const lines = await fetchTranscriptLines(track.baseUrl);
+      if (!lines.length) throw new Error("字幕の本文を取得できませんでした。");
+      current.lang = trackLabel(track);
+      current.lines = lines;
+      renderResult();
+      saveHistory(current);
+      renderHistory();
+      setStatus("");
+    } catch (err) {
+      console.error(err);
+      setStatus("⚠ " + (err.message || "字幕の取得に失敗しました。"), "error");
     }
-    customQuestions.forEach((q) => {
+  }
+
+  // ---- 表示 ----------------------------------------------------------------
+  function renderResult() {
+    els.vidTitle.textContent = current.title;
+    const parts = [];
+    if (current.author) parts.push(current.author);
+    if (current.length) parts.push("長さ " + fmtTime(current.length * 1000));
+    if (current.lang) parts.push(current.lang);
+    els.vidMeta.textContent = parts.join(" ・ ");
+    els.thumb.src = `https://i.ytimg.com/vi/${current.videoId}/hqdefault.jpg`;
+    els.thumb.alt = current.title;
+    renderTranscript();
+    els.result.classList.remove("hidden");
+    els.result.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function renderTranscript() {
+    const showTs = els.tsToggle.checked;
+    els.transcript.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    current.lines.forEach((ln) => {
       const div = document.createElement("div");
-      div.className = "custom-item";
-      div.innerHTML =
-        `<div class="q">${escapeHtml(q.question)}</div>` +
-        `<div class="muted">${escapeHtml(q.category)} ・ 正解：${escapeHtml(q.choices[q.answer] || "")}</div>`;
-      const actions = document.createElement("div");
-      actions.className = "actions";
-      const editBtn = document.createElement("button");
-      editBtn.className = "btn";
-      editBtn.textContent = "✏️ 編集";
-      editBtn.addEventListener("click", () => editQuestion(q.id));
-      const delBtn = document.createElement("button");
-      delBtn.className = "btn ghost";
-      delBtn.textContent = "🗑 削除";
-      delBtn.addEventListener("click", () => deleteQuestion(q.id));
-      actions.appendChild(editBtn);
-      actions.appendChild(delBtn);
-      div.appendChild(actions);
-      list.appendChild(div);
+      div.className = "tline";
+      if (showTs) {
+        const a = document.createElement("a");
+        a.className = "tstamp";
+        a.textContent = fmtTime(ln.start);
+        a.href = `https://www.youtube.com/watch?v=${current.videoId}&t=${Math.floor(
+          ln.start / 1000
+        )}s`;
+        a.target = "_blank";
+        a.rel = "noopener";
+        div.appendChild(a);
+      }
+      const span = document.createElement("span");
+      span.className = "ttext";
+      span.textContent = ln.text;
+      div.appendChild(span);
+      frag.appendChild(div);
     });
+    els.transcript.appendChild(frag);
+
+    const full = plainText(false);
+    const chars = full.replace(/\n/g, "").length;
+    const words = full.split(/\s+/).filter(Boolean).length;
+    els.wordCount.textContent = `${current.lines.length} 行 ・ ${chars.toLocaleString()} 文字 ・ ${words.toLocaleString()} 語`;
   }
 
-  function editQuestion(id) {
-    const q = customQuestions.find((x) => x.id === id);
-    if (!q) return;
-    $("#editId").value = q.id;
-    $("#fCategory").value = q.category;
-    $("#fQuestion").value = q.question;
-    [0, 1, 2, 3].forEach((i) => ($("#fChoice" + i).value = q.choices[i] || ""));
-    $("#fAnswer").value = q.answer;
-    $("#fExplanation").value = q.explanation || "";
-    $("#formTitle").textContent = "問題を編集";
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  function plainText(withTs) {
+    return current.lines
+      .map((ln) => (withTs ? `[${fmtTime(ln.start)}] ${ln.text}` : ln.text))
+      .join("\n");
   }
 
-  function deleteQuestion(id) {
-    if (!confirm("この問題を削除しますか？")) return;
-    customQuestions = customQuestions.filter((q) => q.id !== id);
-    save(STORAGE.custom, customQuestions);
-    renderCustomList();
-    updateFooter();
+  // ---- コピー / ダウンロード ----------------------------------------------
+  async function copyTranscript() {
+    if (!current) return;
+    const text = plainText(els.tsToggle.checked);
+    try {
+      await navigator.clipboard.writeText(text);
+      flash(els.copyBtn, "✓ コピーしました");
+    } catch (e) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      flash(els.copyBtn, "✓ コピーしました");
+    }
   }
 
-  // ============ 成績 ============
-  function renderStats() {
-    $("#statTotal").textContent = stats.total;
-    $("#statCorrect").textContent = stats.correct;
-    const rate = stats.total ? Math.round((stats.correct / stats.total) * 100) : 0;
-    $("#statRate").textContent = rate + "%";
+  function downloadTranscript() {
+    if (!current) return;
+    const text =
+      `${current.title}\n${current.author}\nhttps://www.youtube.com/watch?v=${current.videoId}\n字幕: ${current.lang}\n\n` +
+      plainText(els.tsToggle.checked);
+    const safe =
+      current.title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 60) ||
+      current.videoId;
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${safe}_文字起こし.txt`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    flash(els.downloadBtn, "✓ 保存しました");
+  }
 
-    const weak = Object.entries(wrongCounts)
-      .filter(([, c]) => c > 0)
-      .sort((a, b) => b[1] - a[1]);
-    const list = $("#weakList");
-    list.innerHTML = "";
-    if (weak.length === 0) {
-      list.innerHTML = '<p class="empty">まだ間違えた問題はありません 🎉</p>';
+  function flash(btn, msg) {
+    const orig = btn.textContent;
+    btn.textContent = msg;
+    btn.disabled = true;
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.disabled = false;
+    }, 1400);
+  }
+
+  // ---- 履歴 ----------------------------------------------------------------
+  function loadHistoryStore() {
+    try {
+      return JSON.parse(localStorage.getItem(LS_HISTORY) || "[]");
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveHistory(item) {
+    let store = loadHistoryStore().filter((h) => h.videoId !== item.videoId);
+    store.unshift({
+      videoId: item.videoId,
+      title: item.title,
+      author: item.author,
+      length: item.length,
+      lang: item.lang,
+      lines: item.lines,
+      savedAt: Date.now(),
+    });
+    store = store.slice(0, MAX_HISTORY);
+    localStorage.setItem(LS_HISTORY, JSON.stringify(store));
+  }
+
+  function renderHistory() {
+    const store = loadHistoryStore();
+    els.historyList.innerHTML = "";
+    els.clearHistory.classList.toggle("hidden", store.length === 0);
+    if (!store.length) {
+      els.historyList.innerHTML =
+        '<p class="empty">まだ履歴はありません。文字起こしすると、ここに保存され、オフラインでも読み返せます。</p>';
       return;
     }
-    const map = {};
-    allQuestions().forEach((q) => (map[q.id] = q));
-    weak.forEach(([id, count]) => {
-      const q = map[id];
-      if (!q) return;
-      const div = document.createElement("div");
-      div.className = "weak-item";
-      div.innerHTML =
-        `<span>${escapeHtml(q.question)}</span>` +
-        `<span class="wrong-count">×${count}</span>`;
-      list.appendChild(div);
+    store.forEach((h) => {
+      const card = document.createElement("button");
+      card.className = "history-item";
+      card.innerHTML = `
+        <img src="https://i.ytimg.com/vi/${h.videoId}/default.jpg" alt="" loading="lazy" />
+        <span class="hi-body">
+          <span class="hi-title"></span>
+          <span class="hi-meta"></span>
+        </span>`;
+      card.querySelector(".hi-title").textContent = h.title;
+      card.querySelector(".hi-meta").textContent =
+        `${h.author || ""}${h.author ? " ・ " : ""}${h.lines.length}行`;
+      card.addEventListener("click", () => {
+        current = Object.assign({}, h, { tracks: [], lang: h.lang });
+        els.url.value = `https://www.youtube.com/watch?v=${h.videoId}`;
+        renderResult();
+        setStatus("📁 履歴から読み込みました（保存時点の内容）。", "");
+      });
+      els.historyList.appendChild(card);
     });
   }
 
-  $("#resetStats").addEventListener("click", () => {
-    if (!confirm("成績と苦手記録をリセットしますか？")) return;
-    stats = { total: 0, correct: 0 };
-    wrongCounts = {};
-    save(STORAGE.stats, stats);
-    save(STORAGE.wrong, wrongCounts);
-    renderStats();
-  });
-
-  // ============ フィルタ変更 ============
-  ["#searchInput", "#categoryFilter", "#bookmarkOnly"].forEach((sel) => {
-    $(sel).addEventListener("input", () => {
-      studyIndex = 0;
-      refreshActive();
+  // ---- プロキシ設定 --------------------------------------------------------
+  function initProxyUI() {
+    els.proxyInput.value = localStorage.getItem(LS_PROXY) || "";
+    els.saveProxy.addEventListener("click", () => {
+      const v = els.proxyInput.value.trim();
+      if (v) localStorage.setItem(LS_PROXY, v);
+      else localStorage.removeItem(LS_PROXY);
+      els.proxyHint.textContent = v
+        ? "✓ カスタムプロキシを優先して使用します。"
+        : "✓ 既定のプロキシ候補を使用します。";
     });
-  });
-
-  // ============ ユーティリティ ============
-  function shuffle(arr) {
-    const a = arr.slice();
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  }
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-  }
-  function updateFooter() {
-    $("#footerInfo").textContent = `内蔵問題 ${window.BUILTIN_QUESTIONS.length}問 ＋ 自作 ${customQuestions.length}問`;
   }
 
-  // ============ 初期化 ============
-  updateFooter();
-  renderStudy();
+  // ---- 初期化 --------------------------------------------------------------
+  function init() {
+    els.form.addEventListener("submit", handleSubmit);
+    els.langSelect.addEventListener("change", () =>
+      loadTrack(parseInt(els.langSelect.value, 10))
+    );
+    els.tsToggle.addEventListener("change", () => current && renderTranscript());
+    els.copyBtn.addEventListener("click", copyTranscript);
+    els.downloadBtn.addEventListener("click", downloadTranscript);
+    els.clearHistory.addEventListener("click", () => {
+      if (confirm("履歴をすべて削除しますか？")) {
+        localStorage.removeItem(LS_HISTORY);
+        renderHistory();
+      }
+    });
+    initProxyUI();
+    renderHistory();
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
 })();

@@ -1,13 +1,11 @@
 // シンプルなオフラインキャッシュ用 Service Worker
-const CACHE = "itp-anki-v1";
+const CACHE = "yt-transcript-v1";
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./icon.svg",
   "./src/style.css",
-  "./src/questions.js",
-  "./src/markdown.js",
   "./src/app.js",
 ];
 

@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>ITパスポート 暗記アプリ</title>
-  <meta name="theme-color" content="#2563eb" />
+  <title>YouTube 文字起こし</title>
+  <meta name="theme-color" content="#ff0033" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="ITパス暗記" />
+  <meta name="apple-mobile-web-app-title" content="文字起こし" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
@@ -16,140 +16,90 @@
 </head>
 <body>
   <header class="app-header">
-    <h1>📘 ITパスポート 暗記アプリ</h1>
-    <p class="subtitle">頻出問題で暗記＆演習 — 自分の問題も追加できます</p>
+    <h1>🎬 YouTube 文字起こし</h1>
+    <p class="subtitle">URL を入れるだけ — 動画で話している内容を全文テキストに</p>
   </header>
 
-  <nav class="tabs">
-    <button class="tab active" data-tab="study">📖 学習</button>
-    <button class="tab" data-tab="quiz">📝 クイズ</button>
-    <button class="tab" data-tab="manage">🗂 問題管理</button>
-    <button class="tab" data-tab="stats">📊 成績</button>
-  </nav>
-
-  <!-- 絞り込みバー -->
-  <div class="filter-bar">
-    <input type="search" id="searchInput" placeholder="🔍 問題・解説を検索..." />
-    <select id="categoryFilter">
-      <option value="">すべてのカテゴリ</option>
-      <option value="ストラテジ系">ストラテジ系</option>
-      <option value="マネジメント系">マネジメント系</option>
-      <option value="テクノロジ系">テクノロジ系</option>
-    </select>
-    <label class="bookmark-toggle">
-      <input type="checkbox" id="bookmarkOnly" /> ⭐ お気に入りのみ
-    </label>
-  </div>
-
   <main>
-    <!-- 学習モード -->
-    <section id="study" class="tab-panel active">
-      <div id="studyCard" class="card flashcard">
-        <div class="card-meta">
-          <span class="badge" id="studyCategory"></span>
-          <span class="counter" id="studyCounter"></span>
-        </div>
-        <div class="card-question" id="studyQuestion"></div>
-        <div class="card-answer hidden" id="studyAnswer"></div>
-        <div class="card-actions">
-          <button id="studyReveal" class="btn primary">答えを見る</button>
-          <button id="studyBookmark" class="btn ghost">⭐ お気に入り</button>
-        </div>
-      </div>
-      <div class="nav-buttons">
-        <button id="studyPrev" class="btn">← 前へ</button>
-        <button id="studyShuffle" class="btn">🔀 シャッフル</button>
-        <button id="studyNext" class="btn">次へ →</button>
-      </div>
-      <p id="studyEmpty" class="empty hidden">該当する問題がありません。</p>
+    <!-- 入力 -->
+    <section class="card input-card">
+      <form id="urlForm" class="url-form">
+        <input
+          type="text"
+          id="urlInput"
+          inputmode="url"
+          autocomplete="off"
+          placeholder="https://www.youtube.com/watch?v=..."
+          required
+        />
+        <button type="submit" id="goBtn" class="btn primary">文字起こし</button>
+      </form>
+      <p id="status" class="status hidden"></p>
     </section>
 
-    <!-- クイズモード -->
-    <section id="quiz" class="tab-panel">
-      <div id="quizCard" class="card">
-        <div class="card-meta">
-          <span class="badge" id="quizCategory"></span>
-          <span class="counter" id="quizCounter"></span>
-        </div>
-        <div class="card-question" id="quizQuestion"></div>
-        <div class="choices" id="quizChoices"></div>
-        <div class="card-answer hidden" id="quizExplanation"></div>
-        <div class="card-actions">
-          <button id="quizNext" class="btn primary hidden">次の問題 →</button>
+    <!-- 結果 -->
+    <section id="result" class="card result-card hidden">
+      <div class="video-head">
+        <img id="thumb" class="thumb" alt="" />
+        <div class="video-info">
+          <h2 id="vidTitle"></h2>
+          <p id="vidMeta" class="muted"></p>
         </div>
       </div>
-      <p id="quizEmpty" class="empty hidden">該当する問題がありません。</p>
+
+      <div class="toolbar">
+        <label class="tool-field">
+          字幕
+          <select id="langSelect"></select>
+        </label>
+        <label class="ts-toggle">
+          <input type="checkbox" id="tsToggle" /> ⏱ タイムスタンプ
+        </label>
+        <span class="spacer"></span>
+        <button id="copyBtn" class="btn">📋 コピー</button>
+        <button id="downloadBtn" class="btn">⬇ 保存(.txt)</button>
+      </div>
+
+      <p id="wordCount" class="muted count"></p>
+      <div id="transcript" class="transcript"></div>
     </section>
 
-    <!-- 問題管理（自作問題の追加・編集・削除） -->
-    <section id="manage" class="tab-panel">
-      <div class="card">
-        <h2 id="formTitle">問題を追加</h2>
-        <form id="questionForm">
-          <input type="hidden" id="editId" />
-          <label>カテゴリ
-            <select id="fCategory" required>
-              <option value="ストラテジ系">ストラテジ系</option>
-              <option value="マネジメント系">マネジメント系</option>
-              <option value="テクノロジ系">テクノロジ系</option>
-            </select>
-          </label>
-          <label>問題文
-            <textarea id="fQuestion" rows="2" required placeholder="問題を入力"></textarea>
-          </label>
-          <div class="choice-inputs">
-            <label>選択肢1 <input type="text" id="fChoice0" required /></label>
-            <label>選択肢2 <input type="text" id="fChoice1" required /></label>
-            <label>選択肢3 <input type="text" id="fChoice2" /></label>
-            <label>選択肢4 <input type="text" id="fChoice3" /></label>
-          </div>
-          <label>正解の選択肢
-            <select id="fAnswer" required>
-              <option value="0">選択肢1</option>
-              <option value="1">選択肢2</option>
-              <option value="2">選択肢3</option>
-              <option value="3">選択肢4</option>
-            </select>
-          </label>
-          <label>解説（Markdown対応：**太字**, # 見出し, - リスト）
-            <textarea id="fExplanation" rows="3" placeholder="解説を入力（任意）"></textarea>
-          </label>
-          <div class="card-actions">
-            <button type="submit" class="btn primary">保存</button>
-            <button type="button" id="formReset" class="btn ghost">クリア</button>
-          </div>
-        </form>
+    <!-- 履歴 -->
+    <section class="card history-card">
+      <div class="section-head">
+        <h2>🕘 履歴</h2>
+        <button id="clearHistory" class="btn ghost small hidden">すべて削除</button>
       </div>
-      <h2 class="list-title">自作問題一覧 <span id="customCount" class="muted"></span></h2>
-      <div id="customList" class="custom-list"></div>
+      <div id="historyList" class="history-list"></div>
     </section>
 
-    <!-- 成績 -->
-    <section id="stats" class="tab-panel">
-      <div class="card">
-        <h2>クイズ成績</h2>
-        <div class="stat-grid">
-          <div class="stat"><span class="stat-num" id="statTotal">0</span><span>挑戦数</span></div>
-          <div class="stat"><span class="stat-num" id="statCorrect">0</span><span>正解数</span></div>
-          <div class="stat"><span class="stat-num" id="statRate">0%</span><span>正答率</span></div>
+    <!-- 設定 -->
+    <section class="card settings-card">
+      <details>
+        <summary>⚙ 詳細設定（CORS プロキシ）</summary>
+        <p class="muted small">
+          ブラウザから直接 YouTube を取得できないため、中継用の CORS プロキシを使います。
+          うまく取得できないときは、別のプロキシURLを入力してください
+          （対象URLは末尾に付与されます。<code>{url}</code> を書くとその位置に挿入されます）。
+        </p>
+        <div class="proxy-row">
+          <input
+            type="text"
+            id="proxyInput"
+            autocomplete="off"
+            placeholder="例) https://api.allorigins.win/raw?url="
+          />
+          <button id="saveProxy" class="btn">保存</button>
         </div>
-        <div class="card-actions">
-          <button id="resetStats" class="btn ghost">成績をリセット</button>
-        </div>
-      </div>
-      <div class="card">
-        <h2>苦手な問題（間違えた回数順）</h2>
-        <div id="weakList" class="weak-list"></div>
-      </div>
+        <p id="proxyHint" class="muted small"></p>
+      </details>
     </section>
   </main>
 
   <footer class="app-footer">
-    <span id="footerInfo"></span>
+    <span>個人利用向け・サーバー不要 / データはこの端末にのみ保存されます</span>
   </footer>
 
-  <script src="src/questions.js"></script>
-  <script src="src/markdown.js"></script>
   <script src="src/app.js"></script>
   <script>
     // オフライン対応（PWA）

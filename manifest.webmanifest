@@ -1,13 +1,13 @@
 {
-  "name": "ITパスポート 暗記アプリ",
-  "short_name": "ITパス暗記",
-  "description": "ITパスポート頻出問題の暗記・クイズ学習アプリ",
+  "name": "YouTube 文字起こし",
+  "short_name": "文字起こし",
+  "description": "YouTubeのURLを入れると、動画で話している内容を全文テキストに書き起こすアプリ",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f4f6fb",
-  "theme_color": "#2563eb",
+  "background_color": "#0f1117",
+  "theme_color": "#ff0033",
   "lang": "ja",
   "icons": [
     {
