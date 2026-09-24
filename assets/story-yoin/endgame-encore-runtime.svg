@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">アベンジャーズ／エンドゲーム：アンコール 上映時間比較</title>
+  <desc id="desc">2019年オリジナル版181分、スタンダード版183分、INFINITY VISION版186分の比較図</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071225"/><stop offset="0.55" stop-color="#111b3f"/><stop offset="1" stop-color="#25124c"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#ffd36a"/><stop offset="1" stop-color="#ff9f43"/></linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#c026d3"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <circle cx="1040" cy="90" r="210" fill="none" stroke="#7dd3fc" stroke-opacity=".2" stroke-width="18"/>
+  <circle cx="1040" cy="90" r="155" fill="none" stroke="#c084fc" stroke-opacity=".18" stroke-width="5"/>
+  <path d="M-40 560 C240 470 460 690 760 560 S1100 455 1260 555" fill="none" stroke="#38bdf8" stroke-opacity=".18" stroke-width="6"/>
+  <text x="72" y="82" fill="#a5b4fc" font-size="26" font-weight="700" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">アベンジャーズ／エンドゲーム：アンコール</text>
+  <text x="72" y="140" fill="#ffffff" font-size="48" font-weight="900" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">上映時間の違いを1枚で比較</text>
+  <text x="72" y="180" fill="#cbd5e1" font-size="22" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">追加映像の長さは上映形式によって異なります</text>
+
+  <g transform="translate(65 235)">
+    <rect width="325" height="300" rx="26" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+    <text x="162.5" y="58" text-anchor="middle" fill="#cbd5e1" font-size="24" font-weight="800" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">2019年 オリジナル版</text>
+    <text x="162.5" y="145" text-anchor="middle" fill="#ffffff" font-size="72" font-weight="900" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">3時間1分</text>
+    <text x="162.5" y="190" text-anchor="middle" fill="#94a3b8" font-size="28" font-weight="700" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">181分</text>
+    <rect x="65" y="230" width="195" height="44" rx="22" fill="#1e293b"/>
+    <text x="162.5" y="260" text-anchor="middle" fill="#cbd5e1" font-size="20" font-weight="700" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">基準となる通常版</text>
+  </g>
+
+  <g transform="translate(438 235)">
+    <rect width="325" height="300" rx="26" fill="#0c2440" stroke="#38bdf8" stroke-width="3"/>
+    <text x="162.5" y="58" text-anchor="middle" fill="#bae6fd" font-size="24" font-weight="800" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">アンコール スタンダード版</text>
+    <text x="162.5" y="145" text-anchor="middle" fill="#ffffff" font-size="72" font-weight="900" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">3時間3分</text>
+    <text x="162.5" y="190" text-anchor="middle" fill="#7dd3fc" font-size="28" font-weight="800" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">183分</text>
+    <rect x="92" y="225" width="141" height="54" rx="27" fill="#0284c7"/>
+    <text x="162.5" y="261" text-anchor="middle" fill="#ffffff" font-size="25" font-weight="900" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">＋2分</text>
+  </g>
+
+  <g transform="translate(811 235)" filter="url(#glow)">
+    <rect width="325" height="300" rx="26" fill="#25114a" stroke="#d8b4fe" stroke-width="3"/>
+    <text x="162.5" y="58" text-anchor="middle" fill="#e9d5ff" font-size="23" font-weight="800" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">INFINITY VISION版</text>
+    <text x="162.5" y="145" text-anchor="middle" fill="#ffffff" font-size="72" font-weight="900" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">3時間6分</text>
+    <text x="162.5" y="190" text-anchor="middle" fill="#d8b4fe" font-size="28" font-weight="800" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">186分</text>
+    <rect x="92" y="225" width="141" height="54" rx="27" fill="url(#violet)"/>
+    <text x="162.5" y="261" text-anchor="middle" fill="#ffffff" font-size="25" font-weight="900" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">＋5分</text>
+  </g>
+
+  <rect x="70" y="578" width="1060" height="58" rx="18" fill="#ffffff" fill-opacity=".08" stroke="#ffffff" stroke-opacity=".12"/>
+  <text x="600" y="616" text-anchor="middle" fill="#e2e8f0" font-size="21" font-weight="700" font-family="Noto Sans JP, Hiragino Sans, Yu Gothic, sans-serif">※劇場の予告編・案内時間は含みません。上映時刻は各劇場でご確認ください。</text>
+</svg>
